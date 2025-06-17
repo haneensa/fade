@@ -70,7 +70,8 @@ void FadeReaderFunction::FadeReaderImplementation(ClientContext &context, TableF
   auto &agg_context = lop_info->agg_info->aggs[out_var];
   for (int i=0; i < bind_data.n_groups; ++i) {
     int index = i * bind_data.n_interventions + data.offset;
-    idx_t g = fnode->groups[i];
+    idx_t g = i;
+    if (!fnode->groups.empty()) g = fnode->groups[i];
     // agg->ReadOutput()
     if (fname == "count") {
       int count_val = agg_context->groups_count[g];
