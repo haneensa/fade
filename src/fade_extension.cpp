@@ -1,3 +1,11 @@
+// TODO: 1) manage how to get the right query_id
+//       2) pass not to return only the removed results
+//       3) refactor aggs
+//       4) return post and pre results
+//       5) enable to pass projection over specs
+//       6) single intervention support
+//       7) dense intervention support
+//       8) compile and link statically templates for dense interventions
 #define DUCKDB_EXTENSION_MAIN
 #include "fade_extension.hpp"
 
