@@ -279,7 +279,7 @@ void prepare_fade_plan(idx_t qid, idx_t opid, std::unordered_map<idx_t, unique_p
 }
 
 // table_name.col_name|...|table_name.col_name
-unordered_map<string, vector<string>>  parse_spec(vector<string>& cols_spec) {
+unordered_map<string, vector<string>> parse_spec(vector<string>& cols_spec) {
 	unordered_map<string, vector<string>> result;
   for (idx_t i = 0; i < cols_spec.size(); ++i) {
 		string table, column;

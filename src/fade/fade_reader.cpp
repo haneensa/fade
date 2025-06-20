@@ -14,8 +14,14 @@ template<class T>
 void read_sum(idx_t index, void* in_data, void* out_data, idx_t col, idx_t limit, idx_t sum_val) {
   T* data_ptr = (T*)in_data;
   T* col_data = (T*)out_data;
-  for (int i = 0; i < limit; ++i) {
-    col_data[i] = sum_val-data_ptr[index + i];
+  if (FadeState::is_equal) {
+    for (int i = 0; i < limit; ++i) {
+      col_data[i] = sum_val-data_ptr[index + i];
+    }
+  } else {
+    for (int i = 0; i < limit; ++i) {
+      col_data[i] = data_ptr[index + i];
+    }
   }
 }
 
@@ -23,9 +29,16 @@ template<class T>
 void read_avg(idx_t index, void* in_data, int* count_ptr, float* col_data, idx_t col, idx_t limit,
               idx_t sum_val, idx_t count_val) {
   T* data_ptr = (T*)in_data;
-  for (int i = 0; i < limit; ++i) {
-    // TODO: make sure we don't divide by 0
-    col_data[i] = (sum_val - data_ptr[index + i]) / (count_val - count_ptr[index + i]);
+  if (FadeState::is_equal) {
+    for (int i = 0; i < limit; ++i) {
+      // TODO: make sure we don't divide by 0
+      col_data[i] = (sum_val - data_ptr[index + i]) / (count_val - count_ptr[index + i]);
+    }
+  } else {
+    for (int i = 0; i < limit; ++i) {
+      // TODO: make sure we don't divide by 0
+      col_data[i] = (data_ptr[index + i]) / (count_ptr[index + i]);
+    }
   }
 }
 
@@ -33,11 +46,20 @@ template<class T>
 void read_stddev(idx_t index, void* in_data, float* sum_2_ptr, int* count_ptr, float* col_data, idx_t col, idx_t limit,
               idx_t sum_val, idx_t sum_2_val, idx_t count_val) {
   T* sum_ptr = (T*)in_data;
-  for (int i = 0; i < limit; ++i) {
-    // TODO: make sure we don't divide by 0
-    float sum_base = sum_val - sum_ptr[index + i];
-    int count_base = count_val - count_ptr[index + i];
-    col_data[i] = std::sqrt( (sum_2_val - sum_2_ptr[index + i]) / count_base - (sum_base*sum_base) / (count_base*count_base) );
+  if (FadeState::is_equal) {
+    for (int i = 0; i < limit; ++i) {
+      // TODO: make sure we don't divide by 0
+      float sum_base = sum_val - sum_ptr[index + i];
+      int count_base = count_val - count_ptr[index + i];
+      col_data[i] = std::sqrt( (sum_2_val - sum_2_ptr[index + i]) / count_base - (sum_base*sum_base) / (count_base*count_base) );
+    }
+  } else {
+    for (int i = 0; i < limit; ++i) {
+      // TODO: make sure we don't divide by 0
+      float sum_base = sum_ptr[index + i];
+      int count_base = count_ptr[index + i];
+      col_data[i] = std::sqrt( (sum_2_ptr[index + i]) / count_base - (sum_base*sum_base) / (count_base*count_base) );
+    }
   }
 }
 
@@ -66,6 +88,7 @@ void FadeReaderFunction::FadeReaderImplementation(ClientContext &context, TableF
     limit = STANDARD_VECTOR_SIZE;
   }
   
+  // if is_equal == false then don't subtract
   auto &sub_aggs = lop_info->agg_info->sub_aggs;
   auto &agg_context = lop_info->agg_info->aggs[out_var];
   for (int i=0; i < bind_data.n_groups; ++i) {

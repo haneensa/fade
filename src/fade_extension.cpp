@@ -24,6 +24,7 @@
 namespace duckdb {
 
 idx_t FadeState::num_worker = 1;
+bool FadeState::is_equal = true;
 unique_ptr<FadeNode> FadeState::cached_fade_result;
 unordered_map<string, unordered_map<string, vector<int32_t>>> FadeState::table_col_annotations;
 unordered_map<string, idx_t> FadeState::col_n_unique;
@@ -86,6 +87,8 @@ inline void PragmaFade(ClientContext &context, const FunctionParameters &paramet
   idx_t agg_idx = parameters.values[1].GetValue<int>();
   auto list_values = ListValue::GetChildren(parameters.values[2]);
   auto spec_values = ListValue::GetChildren(parameters.values[3]);
+  FadeState::is_equal = parameters.values[4].GetValue<bool>();
+
   vector<int> groups;
   for (idx_t i = 0; i < list_values.size(); ++i) {
       auto &child = list_values[i];
@@ -157,7 +160,8 @@ void FadeExtension::Load(DuckDB &db) {
     ExtensionUtil::RegisterFunction(db_instance, prepare_lineage_fun);
     
     auto whatif_fun = PragmaFunction::PragmaCall("whatif", PragmaFade, {LogicalType::INTEGER,
-        LogicalType::INTEGER, LogicalType::LIST(LogicalType::INTEGER), LogicalType::LIST(LogicalType::VARCHAR)});
+        LogicalType::INTEGER, LogicalType::LIST(LogicalType::INTEGER),
+        LogicalType::LIST(LogicalType::VARCHAR), LogicalType::BOOLEAN});
     ExtensionUtil::RegisterFunction(db_instance, whatif_fun);
   	ExtensionUtil::RegisterFunction(db_instance, FadeReaderFunction::GetFunctionSet());
   	ExtensionUtil::RegisterFunction(db_instance, GetPredicatesFunction::GetFunctionSet());

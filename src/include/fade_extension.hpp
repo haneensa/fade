@@ -21,6 +21,7 @@ class FadeNode;
 
 struct FadeState {
   static idx_t num_worker;
+  static bool is_equal;
   static unique_ptr<FadeNode> cached_fade_result;
   static unordered_map<string, unordered_map<string, vector<int32_t>>> table_col_annotations;
   static unordered_map<string, idx_t> col_n_unique;
