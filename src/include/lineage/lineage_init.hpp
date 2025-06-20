@@ -97,7 +97,6 @@ struct LineageInfoNode {
 
 struct LineageState {
    static idx_t query_id;
-   static idx_t global_id;
    static bool capture;
    static bool persist;
    static bool debug;

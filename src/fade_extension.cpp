@@ -34,7 +34,6 @@ unordered_map<string, vector<string>> FadeState::cached_spec_map;
 vector<string> FadeState::cached_spec_stack;
 
 idx_t LineageState::query_id = 0;
-idx_t LineageState::global_id = 0;
 bool LineageState::capture = false;
 bool LineageState::debug = false;
 bool LineageState::persist = true;

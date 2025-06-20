@@ -147,7 +147,7 @@ AggregateFunction GetListFunction(ClientContext &context) {
   return entry.functions.GetFunctionByArguments(context, {LogicalType::ROW_TYPE});
 }
 
-idx_t ProcessJoin(unique_ptr<LogicalOperator> &op, vector<idx_t>& rowids, idx_t query_id) {
+idx_t ProcessJoin(unique_ptr<LogicalOperator> &op, vector<idx_t>& rowids, idx_t query_id, idx_t& cur_op_id) {
   auto &join = op->Cast<LogicalComparisonJoin>();
   idx_t left_col_id = 0;
   idx_t right_col_id = 0;
@@ -172,7 +172,7 @@ idx_t ProcessJoin(unique_ptr<LogicalOperator> &op, vector<idx_t>& rowids, idx_t 
       << join.right_projection_map.size() << std::endl;
 
   int source_count = 2;
-  auto lop = make_uniq<LogicalLineageOperator>(op->estimated_cardinality, LineageState::global_id++, query_id,
+  auto lop = make_uniq<LogicalLineageOperator>(op->estimated_cardinality, cur_op_id++, query_id,
       op->type, source_count, left_col_id, right_col_id);
   lop->AddChild(std::move(op));
   op = std::move(lop);
@@ -194,16 +194,16 @@ bool filter_between_agg_and_base(unique_ptr<LogicalOperator>& op) {
 }
 
 
-idx_t InjectLineageOperator(unique_ptr<LogicalOperator> &op,ClientContext &context, idx_t query_id) {
+idx_t InjectLineageOperator(unique_ptr<LogicalOperator> &op,ClientContext &context, idx_t query_id, idx_t& cur_op_id) {
   if (!op) return 0;
   vector<idx_t> rowids = {};
 
   for (auto &child : op->children) {
-    rowids.push_back( InjectLineageOperator(child, context,  query_id) );
+    rowids.push_back( InjectLineageOperator(child, context,  query_id, cur_op_id) );
   }
 
   if (LineageState::debug) {
-    std::cout << "Inject: " << op->GetName() << " " << LineageState::global_id;
+    std::cout << "Inject: " << op->GetName() << " " << cur_op_id;
     for (int i = 0; i < rowids.size(); ++i)  std::cout << " -> " << rowids[i];
     std::cout << std::endl;
   }
@@ -225,7 +225,7 @@ idx_t InjectLineageOperator(unique_ptr<LogicalOperator> &op,ClientContext &conte
     auto& col = op->Cast<LogicalColumnDataGet>();
     idx_t col_id = col.chunk_types.size();
     if (LineageState::debug) std::cout << "[DEBUG] ChunkGet: " << col_id << std::endl;
-    auto lop = make_uniq<LogicalLineageOperator>(op->estimated_cardinality, LineageState::global_id++, query_id,
+    auto lop = make_uniq<LogicalLineageOperator>(op->estimated_cardinality, cur_op_id++, query_id,
         op->type, 1/*src cnt*/, col_id, 0);
     lop->AddChild(std::move(op));
     op = std::move(lop);
@@ -278,12 +278,12 @@ idx_t InjectLineageOperator(unique_ptr<LogicalOperator> &op,ClientContext &conte
     // Propagate annotations from the left and right sides.
     // Add PhysicaLineage to extraxt the last two columns
     // and replace it with a single annotations column
-    return ProcessJoin(op, rowids, query_id);
+    return ProcessJoin(op, rowids, query_id, cur_op_id);
   } else if (op->type == LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY) {
       // check if there is a filter between this and last lineageop or leaf node
       bool is_filter_child = filter_between_agg_and_base(op->children[0]);
       if (is_filter_child) {
-        auto filter_lop = make_uniq<LogicalLineageOperator>(op->estimated_cardinality, LineageState::global_id++,
+        auto filter_lop = make_uniq<LogicalLineageOperator>(op->estimated_cardinality, cur_op_id++,
             query_id, LogicalOperatorType::LOGICAL_FILTER, 1, rowids[0], 0, 0);
         auto child_child = std::move(op->children[0]);
         filter_lop->AddChild(std::move(child_child));
@@ -305,7 +305,7 @@ idx_t InjectLineageOperator(unique_ptr<LogicalOperator> &op,ClientContext &conte
           aggr.expressions.push_back(std::move(list_aggregate));
           idx_t new_col_id = aggr.groups.size() + aggr.expressions.size() + aggr.grouping_functions.size() - 1;
           
-          auto dummy = make_uniq<LogicalLineageOperator>(aggr.estimated_cardinality, LineageState::global_id++, query_id,
+          auto dummy = make_uniq<LogicalLineageOperator>(aggr.estimated_cardinality, cur_op_id++, query_id,
               op->type, 1, new_col_id, 0);
           dummy->AddChild(std::move(op));
 
@@ -317,9 +317,10 @@ idx_t InjectLineageOperator(unique_ptr<LogicalOperator> &op,ClientContext &conte
   return 0;
 }
 
-idx_t BuildLineageInfoTree(unordered_map<idx_t, unique_ptr<LineageInfoNode>>&lop_plan, unique_ptr<LogicalOperator>&plan) {
+idx_t BuildLineageInfoTree(unordered_map<idx_t, unique_ptr<LineageInfoNode>>&lop_plan,
+                           unique_ptr<LogicalOperator>&plan, idx_t& cur_op_id) {
   if (plan->children.size() == 0) {
-    idx_t opid = LineageState::global_id++;
+    idx_t opid = cur_op_id++;
     lop_plan[opid] =  make_uniq<LineageInfoNode>(opid, plan->type);
     if (plan->type == LogicalOperatorType::LOGICAL_GET) {
       auto &get = plan->Cast<LogicalGet>();
@@ -333,7 +334,7 @@ idx_t BuildLineageInfoTree(unordered_map<idx_t, unique_ptr<LineageInfoNode>>&lop
   }
   
   // if this is an extension for lineage then get left and right childrens
-  idx_t child = BuildLineageInfoTree(lop_plan, plan->children[0]);
+  idx_t child = BuildLineageInfoTree(lop_plan, plan->children[0], cur_op_id);
 
   if (plan->type == LogicalOperatorType::LOGICAL_EXTENSION_OPERATOR) {
     idx_t opid = plan->Cast<LogicalLineageOperator>().operator_id;
@@ -341,7 +342,7 @@ idx_t BuildLineageInfoTree(unordered_map<idx_t, unique_ptr<LineageInfoNode>>&lop
         plan->Cast<LogicalLineageOperator>().dependent_type);
     lop->children.push_back(child);
     if (plan->children[0]->children.size() > 1) {
-      idx_t rhs_child = BuildLineageInfoTree(lop_plan, plan->children[0]->children[1]);
+      idx_t rhs_child = BuildLineageInfoTree(lop_plan, plan->children[0]->children[1], cur_op_id);
       lop->children.push_back(rhs_child);
     }
     
@@ -357,13 +358,13 @@ idx_t BuildLineageInfoTree(unordered_map<idx_t, unique_ptr<LineageInfoNode>>&lop
 unique_ptr<LogicalOperator> AddLineage(OptimizerExtensionInput &input,
                                     unique_ptr<LogicalOperator>& plan) {
   idx_t query_id = LineageState::query_id++; 
-  LineageState::global_id = 0;
-  idx_t final_rowid = InjectLineageOperator(plan, input.context, query_id);
+  idx_t cur_op_id = 0;
+  idx_t final_rowid = InjectLineageOperator(plan, input.context, query_id, cur_op_id);
   // inject lineage op at the root of the plan to extract any annotation columns
   // If root is create table, then add lineage operator below it
-  std::cout << "final rowid: " << final_rowid << std::endl;
+  std::cout << "final rowid: " << final_rowid << " " << cur_op_id << std::endl;
   auto root = make_uniq<LogicalLineageOperator>(plan->estimated_cardinality,
-      LineageState::global_id++, query_id, plan->children[0]->type, 1/*src_cnt*/, final_rowid, 0, true);
+      cur_op_id++, query_id, plan->children[0]->type, 1/*src_cnt*/, final_rowid, 0, true);
   LineageState::qid_plans_roots[query_id] = root->operator_id;
   if (plan->type == LogicalOperatorType::LOGICAL_CREATE_TABLE) {
     auto child = std::move(plan->children[0]);
@@ -373,7 +374,7 @@ unique_ptr<LogicalOperator> AddLineage(OptimizerExtensionInput &input,
     root->AddChild(std::move(plan));
     plan = std::move(root);
   }
-  BuildLineageInfoTree(LineageState::qid_plans[query_id], plan);
+  BuildLineageInfoTree(LineageState::qid_plans[query_id], plan, cur_op_id);
 
   return std::move(plan);
 }
