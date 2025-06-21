@@ -188,7 +188,8 @@ void InterventionSparse(int query_id, idx_t operator_id, idx_t thread_id,
     for (const string  &col : spec_map[lop_info->table_name]) {
       // for each annotations, combine them a[0] + a[1] + .. + a[n]
       string spec_key = lop_info->table_name + "." + col;
-      std::cout <<  lop_info->table_name << " base " << col << " "<< lop_info->n_input << std::endl; 
+      if (LineageState::debug)
+        std::cout <<  lop_info->table_name << " base " << col << " "<< lop_info->n_input << std::endl; 
       assert(FadeState::table_col_annotations[lop_info->table_name][col].size() == lop_info->n_input);
       idx_t n_unique = FadeState::col_n_unique[spec_key];
       // TODO: do this once
@@ -323,9 +324,7 @@ void WhatIfSparse(ClientContext& context, int qid, int aggid,
   InterventionSparse(qid, root_id, 0, fade_data, spec_map, groups);
   // 4. store output in global storage to be accessed later by the user
   int output_opid = get_output_opid(qid, root_id);
-  std::cout << "output opid: " << output_opid << std::endl;
   FadeState::cached_fade_result = std::move(fade_data[output_opid]);
-  std::cout << "done" << std::endl;
 }
 
 } // namespace duckdb

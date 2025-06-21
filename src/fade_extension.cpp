@@ -1,7 +1,8 @@
-// TODO: 1) manage how to get the right query_id
-//       2) pass not to return only the removed results
+// TODO: 1) manage how to get the right query_id [DONE]
 //       3) refactor aggs
 //       4) return post and pre results
+//       5) multi-threading support
+//       2) pass not to return only the removed results [DONE]
 //       5) enable to pass projection over specs
 //       6) single intervention support
 //       7) dense intervention support
@@ -24,14 +25,16 @@
 namespace duckdb {
 
 idx_t FadeState::num_worker = 1;
-bool FadeState::is_equal = true;
 unique_ptr<FadeNode> FadeState::cached_fade_result;
-unordered_map<string, unordered_map<string, vector<int32_t>>> FadeState::table_col_annotations;
-unordered_map<string, idx_t> FadeState::col_n_unique;
 unordered_map<string, idx_t> FadeState::table_count;
-unordered_map<string, unique_ptr<MaterializedQueryResult>> FadeState::codes;
 unordered_map<string, vector<string>> FadeState::cached_spec_map;
+// ### for sparse
+unordered_map<string, idx_t> FadeState::col_n_unique;
+unordered_map<string, unordered_map<string, vector<int32_t>>> FadeState::table_col_annotations;
+bool FadeState::is_equal = true;
+unordered_map<string, unique_ptr<MaterializedQueryResult>> FadeState::codes;
 vector<string> FadeState::cached_spec_stack;
+// ##############
 
 idx_t LineageState::query_id = 0;
 bool LineageState::capture = false;
@@ -71,7 +74,6 @@ inline void PragmaSetLineage(ClientContext &context, const FunctionParameters &p
 // 1) prepapre_lineage: query id
 inline void PragmaPrepareLineage(ClientContext &context, const FunctionParameters &parameters) {
 	int qid = parameters.values[0].GetValue<int>();
-  std::cout << "PRAGMA prepapre_lineage: " <<  qid << std::endl;
   idx_t root_id = LineageState::qid_plans_roots[qid];
   get_cached_lineage(qid, root_id);
   get_cached_vals(qid, root_id);
@@ -97,8 +99,9 @@ inline void PragmaFade(ClientContext &context, const FunctionParameters &paramet
   for (idx_t i = 0; i < spec_values.size(); ++i) {
     specs.push_back(spec_values[i].ToString());
   }
-  std::cout << "Whatif(qid:" << qid << ",n_specs:" << specs.size() << ",agg_idx:" << agg_idx
-    << ",ngroups:" << groups.size() << ")" << std::endl;;
+  if (LineageState::debug)
+    std::cout << "Whatif(qid:" << qid << ",n_specs:" << specs.size() << ",agg_idx:" << agg_idx
+      << ",ngroups:" << groups.size() << ")" << std::endl;;
   
   // 1. Parse: spec. Input (t.col1|t.col2|..)
   unordered_map<string, vector<string>> spec_map = parse_spec(specs);
@@ -141,7 +144,9 @@ void FadeExtension::Load(DuckDB &db) {
     std::cout << "Fade extension loaded successfully.\n";
     
   	ExtensionUtil::RegisterFunction(db_instance, LineageScanFunction::GetFunctionSet());
-  	ExtensionUtil::RegisterFunction(db_instance, LineageMetaFunction::GetFunctionSet());
+    TableFunction pragma_func("pragma_latest_qid", {}, LineageMetaFunction::LineageMetaImplementation, 
+        LineageMetaFunction::LineageMetaBind);
+    ExtensionUtil::RegisterFunction(db_instance, pragma_func);
 
     auto debug_fun = PragmaFunction::PragmaCall("set_debug_lineage", PragmaLineageDebug, {LogicalType::BOOLEAN});
     ExtensionUtil::RegisterFunction(db_instance, debug_fun);

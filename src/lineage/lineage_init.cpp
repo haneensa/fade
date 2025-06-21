@@ -362,7 +362,8 @@ unique_ptr<LogicalOperator> AddLineage(OptimizerExtensionInput &input,
   idx_t final_rowid = InjectLineageOperator(plan, input.context, query_id, cur_op_id);
   // inject lineage op at the root of the plan to extract any annotation columns
   // If root is create table, then add lineage operator below it
-  std::cout << "final rowid: " << final_rowid << " " << cur_op_id << std::endl;
+  if (LineageState::debug)
+    std::cout << "final rowid: " << final_rowid << " " << cur_op_id << std::endl;
   auto root = make_uniq<LogicalLineageOperator>(plan->estimated_cardinality,
       cur_op_id++, query_id, plan->children[0]->type, 1/*src_cnt*/, final_rowid, 0, true);
   LineageState::qid_plans_roots[query_id] = root->operator_id;

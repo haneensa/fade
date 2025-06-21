@@ -33,7 +33,6 @@ void AdjustOutputIds(idx_t qid, idx_t opid, vector<int>& groups) {
   if (!has_reorder) return;
   // bw[oid] = iid;
   // iterate over bw, replace groups[i] = bw[ groups[i] ];
-  std::cout << "AdjustOutputIds order by " << lop_info->lineage1D.size() << std::endl;
   if (lop_info->lineage1D.empty()) {
     string table = to_string(qid) + "_" + to_string(opid);
     vector<std::pair<Vector, int>>& chunked_lineage = LineageState::lineage_store[table];
@@ -46,7 +45,6 @@ void AdjustOutputIds(idx_t qid, idx_t opid, vector<int>& groups) {
     }
   }
 
-  std::cout << "after AdjustOutputIds order by " << lop_info->lineage1D.size() << std::endl;
   for (idx_t i=0; i < groups.size(); ++i) {
     if (groups[i] >= lop_info->lineage1D.size()) std::cout << "----->" << i << " " << lop_info->lineage1D[i] << " " << groups[i] << std::endl;
     groups[i] = lop_info->lineage1D[ groups[i] ];
@@ -232,7 +230,6 @@ void prepare_fade_plan(idx_t qid, idx_t opid, std::unordered_map<idx_t, unique_p
         sfnode->n_interventions = 1;
         for (const string  &col : spec_map[lop_info->table_name]) {
           string spec_key = lop_info->table_name + "." + col;
-          std::cout << spec_key << std::endl;
           sfnode->n_interventions *= FadeState::col_n_unique[spec_key];
           // todo: this should be local to the whatif instantiation
           FadeState::cached_spec_stack.push_back(spec_key);
@@ -285,7 +282,8 @@ unordered_map<string, vector<string>> parse_spec(vector<string>& cols_spec) {
 		string table, column;
     string& table_col = cols_spec[i];
     std::istringstream ss(table_col);
-    std::cout << "parse: " << table_col << std::endl;
+    if (LineageState::debug)
+      std::cout << "parse: " << table_col << std::endl;
 		if (std::getline(ss, table, '.') && std::getline(ss, column)) {
       // Convert column name to uppercase (optional)
       for (char& c : column) 	c = std::tolower(c);
@@ -303,14 +301,15 @@ unique_ptr<MaterializedQueryResult> get_codes(ClientContext &context, string tab
   query << "SELECT DISTINCT v FROM (SELECT CAST( DENSE_RANK() OVER (ORDER BY "
     << col << ") AS INTEGER ) - 1 AS k, "
     << col << " as v FROM " << table << " order by rowid) as t ORDER BY k";
-  std::cout << query.str() << std::endl;
+  if (LineageState::debug)  std::cout << query.str() << std::endl;
   auto result = conn->Query(query.str());
   if (!result || result->HasError()) {
       std::cerr << "Query failed: " << (result ? result->GetError() : "null result") << std::endl;
       return nullptr;
   }
   idx_t count = result->RowCount();
-  std::cout << result->ToString() << std::endl;
+  if (LineageState::debug)
+    std::cout << result->ToString() << std::endl;
   return std::move(result);
 }
 
@@ -349,11 +348,10 @@ string generate_n_unique_count(const string &table, const vector<string> &column
 
 
 void read_annotations(ClientContext &context, unordered_map<string, vector<string>>& spec) {
-  std::cout << "read_annotations" << std::endl;
   auto conn = make_uniq<Connection>(*context.db);
   for (const auto& e : spec) {
     string query = generate_dict_query(e.first, e.second);
-    std::cout << query << std::endl;
+    if (LineageState::debug) std::cout << query << std::endl;
     if (query.empty()) continue;
     auto result = conn->Query(query);
     if (!result || result->HasError()) {
@@ -376,7 +374,8 @@ void read_annotations(ClientContext &context, unordered_map<string, vector<strin
       }
     }
     query =  generate_n_unique_count(e.first, e.second);
-    std::cout << "query: " << query << std::endl;
+    if (LineageState::debug)
+      std::cout << "query: " << query << std::endl;
     result = conn->Query(query);
     if (!result || result->HasError()) {
         std::cerr << "Query failed: " << (result ? result->GetError() : "null result") << std::endl;
@@ -391,7 +390,8 @@ void read_annotations(ClientContext &context, unordered_map<string, vector<strin
     for (size_t i = 0; i < e.second.size(); ++i) {
       if (map.find(e.second[i]) != map.end()) continue;
       map[e.second[i]] = std::move(result_vector[i]);
-      std::cout << e.second[i] << " " << i << " " << map[e.second[i]].size() << std::endl;
+      if (LineageState::debug)
+        std::cout << e.second[i] << " " << i << " " << map[e.second[i]].size() << std::endl;
     }
   }
 
